@@ -1,0 +1,1 @@
+rancher host create --driver amazonec2 --amazonec2-access-key <access-key> --amazonec2-secret-key <secret-key> --amazonec2-security-group rancher-machine --amazonec2-region us-east-1 --amazonec2-zone a --amazonec2-vpc-id <vpc-id> --name test-001 --amazonec2-instance-type t2.small --engine-install-url=https://releases.rancher.com/install-docker/17.03.sh
