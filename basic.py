@@ -13,7 +13,7 @@ import datetime
 
 from multiprocessing import Process, Manager, Array, current_process, Lock
 
-SCALE = 200
+SCALE = 300
 N_THREADS = 10
 
 def run_cmd(msg, cmd):
@@ -33,13 +33,13 @@ def load_containers_now(thread, containers):
   containers.clear()
   for c in ps_out_list:
     if u'primaryIpAddress' in c[u'Container']:
-      ip = c[u'Container'][u'primaryIpAddress']
-      st = c[u'Container'][u'state']
+      ip = c[u'Container'][u'primaryIpAddress'].encode('ascii','replace')
+      st = c[u'Container'][u'state'].encode('ascii','replace')
       if st == 'running':
         ct = c[u'Container'][u'created'].encode('ascii','replace')
         # We only test containers that have been created 120 seconds ago because it takes time for networking to get established
         if (datetime.datetime.now() - datetime.datetime.strptime(ct, "%Y-%m-%dT%H:%M:%SZ")).total_seconds() > 120:
-          containers[c[u'ID'].encode('ascii','replace')] = ip.encode('ascii','replace')
+          containers[c[u'ID'].encode('ascii','replace')] = ip
   print "%s: thread = %s %d containers=" % (datetime.datetime.now(), thread, len(containers)) + str(containers)
 
 def host_is_active(cont):
@@ -60,7 +60,7 @@ def net_test(thread, containers):
       # Another thread could have cleared these keys
       if source_ip != None and target_ip != None:
         cmd = "rancher exec %s curl -sSf http://%s -o /dev/null" % (source, target_ip)
-        code = run_cmd(thread, cmd)
+        code = run_cmd("%s, %d" % (thread, iteration) , cmd)
         if code != 0:
           # Make sure containers are still around so we did not get the error because source or target was killed.
           time.sleep(60) # Sleep for 60 seconds because Rancher takes time to reflect container state
