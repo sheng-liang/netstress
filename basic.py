@@ -30,8 +30,11 @@ def load_containers_now(thread, containers):
       ip = c[u'Container'][u'primaryIpAddress']
       st = c[u'Container'][u'state']
       if st == 'running':
-        containers[c[u'ID'].encode('ascii','replace')] = ip.encode('ascii','replace')
-  print "%s: thread = %s containers=" % (datetime.datetime.now(), thread) + str(containers)
+        ct = c[u'Container'][u'created'].encode('ascii','replace')
+        # We only test containers that have been created 120 seconds ago because it takes time for networking to get established
+        if (datetime.datetime.now() - datetime.datetime.strptime(ct, "%Y-%m-%dT%H:%M:%SZ")).total_seconds() > 120:
+          containers[c[u'ID'].encode('ascii','replace')] = ip.encode('ascii','replace')
+  print "%s: thread = %s %d containers=" % (datetime.datetime.now(), thread, len(containers)) + str(containers)
 
 def net_test(thread, containers):
   iteration = 0
@@ -46,7 +49,7 @@ def net_test(thread, containers):
       p.communicate()
       if p.returncode != 0:
         # Make sure containers are still around so we did not get the error because source or target was killed.
-        time.sleep(20) # Sleep for 20 seconds because Rancher takes time to reflect container state
+        time.sleep(60) # Sleep for 60 seconds because Rancher takes time to reflect container state
         load_containers_now(thread, containers)
         updated_keys = containers.keys()
         if source in updated_keys and target in updated_keys:
