@@ -16,10 +16,16 @@ from multiprocessing import Process, Manager, Array, current_process, Lock
 SCALE = 200
 N_THREADS = 10
 
+def run_cmd(msg, cmd):
+  p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+  out, err = p.communicate()
+  print "%s: [%s] %s => %d(%s)" % (datetime.datetime.now(), msg, cmd, p.returncode, repr(out))
+  return p.returncode
+
 def fatal_error(msg):
   print msg
   # Just kill the test so we can debug
-  subprocess.call("killall python", shell = True)
+  run_cmd("", "killall python")
 
 def load_containers_now(thread, containers):
   ps_out = subprocess.check_output("rancher ps -c --format json", shell=True)
@@ -36,24 +42,34 @@ def load_containers_now(thread, containers):
           containers[c[u'ID'].encode('ascii','replace')] = ip.encode('ascii','replace')
   print "%s: thread = %s %d containers=" % (datetime.datetime.now(), thread, len(containers)) + str(containers)
 
+def host_is_active(cont):
+  # Make sure host is active
+  host = json.loads(subprocess.check_output("rancher inspect %s --format json" % cont, shell=True))[u'hostId'].encode('ascii','replace')
+  return json.loads(subprocess.check_output("rancher inspect %s --format json" % host, shell=True))[u'state'] == u'active'
+
+
 def net_test(thread, containers):
   iteration = 0
   while True:
     keys = containers.keys()
     if len(keys) >= 1:
       source = keys[int(len(keys) * random.random())]
+      source_ip = containers.get(source)
       target = keys[int(len(keys) * random.random())]
-      print "%s: thread = %s iteration = %d %s(%s) => %s(%s)" % (datetime.datetime.now(), thread, iteration, source, containers[source], target, containers[target])
-      cmd = "rancher exec %s curl -sSf http://%s -o /dev/null" % (source, containers[target])
-      p = subprocess.Popen(cmd, shell=True)
-      p.communicate()
-      if p.returncode != 0:
-        # Make sure containers are still around so we did not get the error because source or target was killed.
-        time.sleep(60) # Sleep for 60 seconds because Rancher takes time to reflect container state
-        load_containers_now(thread, containers)
-        updated_keys = containers.keys()
-        if source in updated_keys and target in updated_keys:
-          fatal_error("ERROR when running %s" % (cmd))
+      target_ip = containers.get(target)
+      # Another thread could have cleared these keys
+      if source_ip != None and target_ip != None:
+        cmd = "rancher exec %s curl -sSf http://%s -o /dev/null" % (source, target_ip)
+        code = run_cmd(thread, cmd)
+        if code != 0:
+          # Make sure containers are still around so we did not get the error because source or target was killed.
+          time.sleep(60) # Sleep for 60 seconds because Rancher takes time to reflect container state
+          load_containers_now(thread, containers)
+          updated_keys = containers.keys()
+          if source in updated_keys and target in updated_keys:
+            # Make sure host is active
+            if host_is_active(source) and host_is_active(target):
+              fatal_error("ERROR when running %s" % (cmd))
       iteration = iteration + 1
     else:
       time.sleep(1)
@@ -68,7 +84,7 @@ def kill_containers(containers):
     keys = containers.keys()
     if len(keys) >= 1:
       target = keys[int(len(keys) * random.random())]
-      subprocess.call("rancher rm %s" % (target), shell = True)
+      run_cmd("", "rancher rm %s" % (target))
     time.sleep(400.0 / SCALE)
 
 def kill_hosts():
@@ -78,18 +94,17 @@ def kill_hosts():
     l = len(host_out_list)
     if l > 1:
       host = host_out_list[int(l * random.random())][u'ID'].encode('ascii','replace')
-      subprocess.call("rancher stop %s" % host, shell = True)
+      run_cmd("", "rancher stop %s" % host)
       time.sleep(60)
-      subprocess.call("rancher rm %s" % host, shell = True)
-      p = subprocess.Popen("./add-host.sh", shell = True)
-      p.communicate()
-      if p.returncode != 0:
+      run_cmd("", "rancher rm %s" % host)
+      code = run_cmd("", "./add-host.sh")
+      if code != 0:
         fatal_error("ERROR adding host")
     time.sleep(600)
 
 
-subprocess.call("rancher rm `rancher ps -q`", shell = True)
-subprocess.call("rancher run shengliang/apache-php --scale %d" % (SCALE), shell = True)
+run_cmd("", "rancher rm `rancher ps -q`")
+run_cmd("", "rancher run shengliang/apache-php --scale %d" % (SCALE))
 
 workers = []
 
