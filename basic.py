@@ -66,7 +66,7 @@ def kill_containers(containers):
     if len(keys) >= 1:
       target = keys[int(len(keys) * random.random())]
       subprocess.call("rancher rm %s" % (target), shell = True)
-    time.sleep(10)
+    time.sleep(400.0 / SCALE)
 
 def kill_hosts():
   while True:
